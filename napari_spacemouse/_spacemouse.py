@@ -29,6 +29,7 @@ with id 1 and one with id 2, to be generated, one after the other.
 """
 from __future__ import annotations
 
+import atexit
 import contextlib
 import copy
 from dataclasses import dataclass
@@ -49,6 +50,8 @@ from typing import (
 )
 
 import hid
+import threading
+
 
 if TYPE_CHECKING:
 
@@ -93,20 +96,7 @@ if TYPE_CHECKING:
 
 
 # clock for timing
-high_acc_clock = timeit.default_timer
-GENERIC_PAGE = 0x1
-BUTTON_PAGE = 0x9
-LED_PAGE = 0x8
-MULTI_AXIS_CONTROLLER_CAP = 0x8
-
-HID_AXIS_MAP = {
-    0x30: "x",
-    0x31: "y",
-    0x32: "z",
-    0x33: "roll",
-    0x34: "pitch",
-    0x35: "yaw",
-}
+get_time = timeit.default_timer
 
 
 def to_int16(y1: int, y2: int) -> int:
@@ -173,6 +163,29 @@ class MouseState(NamedTuple):
         )
 
 
+class _StoppableThread(threading.Thread):
+    """Thread class with a stop() method. The thread itself has to check
+    regularly for the stopped() condition."""
+
+    def __init__(self, dev: hid_device, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dev = dev
+        self._stop_event = threading.Event()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
+
+    def run(self):
+        while not self.stopped():
+            try:
+                self._dev.read(8, timeout_ms=100)
+            except OSError:
+                return
+
+
 @dataclass
 class DeviceSpec:
     """Holds the specification of a single 3Dconnexion device.
@@ -219,6 +232,7 @@ class DeviceSpec:
         # start in disconnected state
         self.callback: Optional[Callable[[MouseState], Any]] = None
         self.button_callback: Optional[Callable[[MouseState], Any]] = None
+        self._thread: Optional[_StoppableThread] = None
 
     def describe_connection(self) -> str:
         """Return string representation of the device, including the connection state"""
@@ -280,6 +294,9 @@ class DeviceSpec:
             data    The data for this HID event, as returned by the HID callback
 
         """
+        if not data:
+            return
+
         button_changed = False
 
         for name, (chan, b1, b2, flip) in self.mappings.items():
@@ -291,10 +308,10 @@ class DeviceSpec:
         for button_index, (chan, byte, bit, hint) in enumerate(self.button_mapping):
             if data[0] == chan:
                 # update the button vector
-                btns[button_index] = (1 if (data[byte] & 1 << bit) != 0 else 0)
+                btns[button_index] = 1 if (data[byte] & 1 << bit) != 0 else 0
                 button_changed = True
 
-        self.dict_state["t"] = high_acc_clock()
+        self.dict_state["t"] = get_time()
 
         # must receive both parts of the 6DOF state before we return the state
         # dictionary
@@ -309,6 +326,20 @@ class DeviceSpec:
         # only call the button callback if the button state actually changed
         if self.button_callback and button_changed:
             self.button_callback(self.tuple_state)
+
+    @property
+    def is_running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    def run(self):
+        self._thread = _StoppableThread(self, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        if self._thread is not None:
+            self._thread.stop()
+            self._thread.join()
+            self._thread = None
 
 
 # the IDs for the supported devices
@@ -516,7 +547,15 @@ def read() -> Optional[MouseState]:
     return _active_device.read() if _active_device is not None else None
 
 
-def find_all_hid_devices() -> List[HIDDevDict]:
+def run():
+    return _active_device.run() if _active_device is not None else None
+
+
+def stop():
+    return _active_device.stop() if _active_device is not None else None
+
+
+def _find_all_hid_devices() -> List[HIDDevDict]:
     "Finds all HID devices connected to the system"
     return hid.enumerate()
 
@@ -529,7 +568,7 @@ def list_connected_devices() -> List[str]:
         Empty if no supported devices found
     """
     devices: Set[str] = set()
-    for device in find_all_hid_devices():
+    for device in _find_all_hid_devices():
         for device_name, spec in DEVICE_SPECS.items():
             if (device["vendor_id"], device["product_id"]) == spec.hid_id:
                 devices.add(device_name)
@@ -585,11 +624,18 @@ def open(
             raise KeyError(f"Unrecognized device name {device!r}") from e
 
     # create a copy of the device specification
-    _active_device = copy.deepcopy(spec)
-    _active_device.callback = callback
-    _active_device.button_callback = button_callback
-    _active_device.open()
-    return _active_device
+    dev = copy.deepcopy(spec)
+    dev.callback = callback
+    dev.button_callback = button_callback
+    dev.open()
+
+    @atexit.register
+    def _tryclose():
+        with contextlib.suppress(Exception):
+            dev.close()
+
+    _active_device = dev
+    return dev
 
 
 def _main():

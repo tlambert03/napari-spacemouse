@@ -1,0 +1,16 @@
+name: napari-spacemouse
+contributions:
+  commands:
+    - id: napari-spacemouse.install
+      title: Install spacemouse
+      python_name: napari_spacemouse:install
+    - id: napari-spacemouse.uninstall
+      title: Uninstall spacemouse
+      python_name: napari_spacemouse:uninstall
+    - id: napari-spacemouse.widget
+      title: Create spacemouse widget
+      python_name: napari_spacemouse._widget:SpaceMouse
+
+  widgets:
+    - command: napari-spacemouse.widget
+      display_name: SpaceMouse
