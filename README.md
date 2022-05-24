@@ -7,3 +7,14 @@
 [![codecov](https://codecov.io/gh/tlambert03/napari-spacemouse/branch/main/graph/badge.svg)](https://codecov.io/gh/tlambert03/napari-spacemouse)
 
 3DConnexion SpaceMouse support for napari
+
+
+```python
+import napari_spacemouse
+
+# start listening to the spacemouse
+napari_spacemouse.install()
+
+# stop listening to the spacemouse
+napari_spacemouse.uninstall()
+```
