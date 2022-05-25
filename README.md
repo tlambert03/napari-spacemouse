@@ -8,7 +8,9 @@
 
 3DConnexion SpaceMouse support for napari
 
-(Expected to work for any product in the [SpaceMouse](https://3dconnexion.com/uk/spacemouse/) line, but only tested on a SpaceNavigator).
+Expected to work for any product in the [SpaceMouse](https://3dconnexion.com/uk/spacemouse/) line, but only tested on a SpaceNavigator. Currently only tested on macOS.
+
+## Usage
 
 To install globally in napari:
 
