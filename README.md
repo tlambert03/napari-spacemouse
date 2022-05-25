@@ -8,6 +8,9 @@
 
 3DConnexion SpaceMouse support for napari
 
+(Expected to work for any product in the [SpaceMouse](https://3dconnexion.com/uk/spacemouse/) line, but only tested on a SpaceNavigator).
+
+To install globally in napari:
 
 ```python
 import napari_spacemouse
@@ -18,3 +21,18 @@ napari_spacemouse.install()
 # stop listening to the spacemouse
 napari_spacemouse.uninstall()
 ```
+
+Alternatively, there is `SpaceMouse` widget that can be used to toggle
+support for the mouse, and provide some configuration.
+
+### Important note for macOS
+
+Currently, this plugin requires that the `3DconnexionHelper` driver *not* be running, otherwise you will likely get an `OSError` when activating the plugin.  To fix this:
+
+1. Open `/Applications/Utilities/Activity Monitor/`
+2. Search for `3DconnexionHelper`
+3. If it's running, highlight it and quit it using the X button at the top right.
+
+When done, you can start it again anytime at `/Applications/3Dconnexion/3DconnexionHelper`.
+
+(Eventually this could be fixed, but we need to use the actual Connexion framework API instead of direct USB reads.)
