@@ -1,9 +1,10 @@
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 from napari.utils.events import EventedModel
 from napari.viewer import current_viewer
-from . import _spacemouse as sm
+from scipy.spatial.transform import Rotation as R
 from superqt.utils import ensure_main_thread
+
+from . import _spacemouse as sm
 
 
 class Config(EventedModel):
@@ -39,7 +40,7 @@ def _handle_buttons(s: sm.MouseState, v=None):
         v.dims.ndisplay = 2 if v.dims.ndisplay == 3 else 3
 
 
-last_step = [0]
+last_step = [0.0]
 
 
 def _apply_state_to_viewer(s: sm.MouseState, v=None):
@@ -68,10 +69,12 @@ def _apply_state_to_viewer(s: sm.MouseState, v=None):
             # TODO: this could feel a bit better
             # trying to scale the frame rate based on how hard they're twisting
             elapsed = s.t - last_step[0]
-            threshold = 0.2 / -np.log((1.0001 - np.abs(s.yaw)))
+            threshold = 0.2 / -np.log(1.0001 - np.abs(s.yaw))
             if elapsed > threshold:
                 axis = v.dims.last_used
-                v.dims.set_current_step(axis, v.dims.current_step[axis] + np.sign(s.yaw))
+                v.dims.set_current_step(
+                    axis, v.dims.current_step[axis] + np.sign(s.yaw)
+                )
                 last_step[0] = s.t
             return
         # otherwise pan

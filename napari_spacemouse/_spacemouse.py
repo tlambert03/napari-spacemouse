@@ -32,8 +32,9 @@ from __future__ import annotations
 import atexit
 import contextlib
 import copy
-from dataclasses import dataclass
+import threading
 import timeit
+from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -50,8 +51,6 @@ from typing import (
 )
 
 import hid
-import threading
-
 
 if TYPE_CHECKING:
 

@@ -1,4 +1,5 @@
 from qtpy import QtWidgets as QtW
+
 from . import _spacemouse as sm
 from . import install, uninstall
 from ._napari import CFG

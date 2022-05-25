@@ -21,7 +21,7 @@ import ctypes as ct
 import ctypes.util
 
 
-class AnnotatedStructureMetaclass(type(ct.Structure)):
+class AnnotatedStructureMetaclass(type(ct.Structure)):  # type: ignore
     def __new__(cls, name, bases, namespace, **kwargs):
         if annotations := namespace.get("__annotations__"):
             namespace["_fields_"] = list(annotations.items())

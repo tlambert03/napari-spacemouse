@@ -36,8 +36,6 @@ def install(device: str = None):
 
 if __name__ == "__main__":
     import napari
-    import numpy as np
-    from pathlib import Path
 
     install()
 
