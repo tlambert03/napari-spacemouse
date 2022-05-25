@@ -271,6 +271,7 @@ class DeviceSpec:
     def close(self) -> None:
         """Close the connection, if it is open"""
         if self._device is not None:
+            self.stop()
             self._device.close()
             self._device = None
 
@@ -639,7 +640,7 @@ def open(
     @atexit.register
     def _tryclose():
         with contextlib.suppress(Exception):
-            dev.close()
+            dev.stop()
 
     _active_device = dev
     return dev

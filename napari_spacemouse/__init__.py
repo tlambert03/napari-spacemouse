@@ -17,7 +17,24 @@ def uninstall():
 
 
 def install(device: str = None):
-    """patch napari to be spacemouse aware."""
+    """Make napari spacemouse-aware.
+
+    This will cause movements of any 3DConnexion mouse to alter the state of the
+    viewer camera.
+
+    Parameters
+    ----------
+    device : str, optional
+        Name of a device to use. By default the first compatible device found will
+        be used.  Valid names include:
+            'SpaceNavigator',
+            'SpaceMouse Compact',
+            'SpaceMouse Pro Wireless',
+            'SpaceMouse Pro',
+            'SpaceMouse Wireless',
+            '3Dconnexion Universal Receiver',
+            'SpacePilot Pro'
+    """
     from napari_spacemouse import _napari
 
     if _spacemouse._active_device is not None:
@@ -41,10 +58,5 @@ if __name__ == "__main__":
 
     viewer = napari.Viewer(ndisplay=3)
     viewer.axes.visible = True
-
     viewer.open_sample("napari", "brain")
-    # data = tuple(np.load(Path(__file__).parent / "wrench.npz").values())
-    # viewer.add_surface(data)
-
-    viewer.camera.angles = (0, 0, 0)
     napari.run()

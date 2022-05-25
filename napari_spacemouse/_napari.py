@@ -18,8 +18,8 @@ class Config(EventedModel):
     gain_zoom: float = 2
     gain_pitch: float = 2
     gain_yaw: float = 2
-    gain_x: float = 2
-    gain_z: float = 2
+    gain_x: float = 4
+    gain_z: float = 4
     max_zoom = 60
     min_zoom = 0.01
     max_perspective = 90
@@ -93,7 +93,7 @@ def _apply_state_to_viewer(s: sm.MouseState, v=None):
     # adjust zoom
     if dy:
         # (zoom included in subtrahend to reduce speed as zoom decreases)
-        zoom = v.camera.zoom - v.camera.zoom * dy / 50
+        zoom = v.camera.zoom - v.camera.zoom * dy / 80
         v.camera.zoom = max(min(zoom, CFG.max_zoom), CFG.min_zoom)
 
 
