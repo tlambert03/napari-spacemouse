@@ -135,7 +135,6 @@ class ButtonSpec(NamedTuple):
     is set in the button bit array
     """
 
-    channel: int
     byte: int
     bit: int
     hint: str = ""
@@ -148,7 +147,7 @@ class ButtonState(list):
 
 class MouseState(NamedTuple):
     # tuple for 6DOF results
-    t: int
+    t: float
     x: int
     y: int
     z: int
@@ -167,7 +166,7 @@ class _StoppableThread(threading.Thread):
     """Thread class with a stop() method. The thread itself has to check
     regularly for the stopped() condition."""
 
-    def __init__(self, dev: hid_device, *args, **kwargs):
+    def __init__(self, dev: DeviceSpec, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._dev = dev
         self._stop_event = threading.Event()
@@ -218,7 +217,7 @@ class DeviceSpec:
 
         # initialise to a vector of 0s for each state
         self.dict_state = {
-            "t": -1,
+            "t": 0,
             "x": 0,
             "y": 0,
             "z": 0,
@@ -257,7 +256,14 @@ class DeviceSpec:
         """Open a connection to the device, if possible"""
         if self._device is None:
             self._device: hid_device = hid.device()
-            self._device.open(*self.hid_id)
+            try:
+                self._device.open(*self.hid_id)
+            except OSError as e:
+                raise OSError(
+                    f"Failed to open/access {self.name!r} device. "
+                    "Please check that the device is available and unused. On macOS, "
+                    "check that '3DconnexionHelper' is not running in Activity Monitor."
+                ) from e
             self.product_name = self._device.get_product_string()
             self.vendor_name = self._device.get_manufacturer_string()
             # self.serial_number = self._device.get_serial_number_string()
@@ -297,35 +303,31 @@ class DeviceSpec:
         if not data:
             return
 
-        button_changed = False
-
-        for name, (chan, b1, b2, flip) in self.mappings.items():
-            if data[0] == chan:
-                val = flip * to_int16(data[b1], data[b2]) / float(self.axis_scale)
-                self.dict_state[name] = val
-
-        btns: ButtonState = self.dict_state["buttons"]  # type: ignore
-        for button_index, (chan, byte, bit, hint) in enumerate(self.button_mapping):
-            if data[0] == chan:
-                # update the button vector
-                btns[button_index] = 1 if (data[byte] & 1 << bit) != 0 else 0
-                button_changed = True
-
+        channel = data[0]
         self.dict_state["t"] = get_time()
 
-        # must receive both parts of the 6DOF state before we return the state
-        # dictionary
-        # FIXME: this will always be True
-        if len(self.dict_state) == 8:
+        if channel == CHANNEL.BTN:
+            btns: ButtonState = self.dict_state["buttons"]  # type: ignore
+            for button_index, (byte, bit, _) in enumerate(self.button_mapping):
+                # update the button vector
+                btns[button_index] = 1 if (data[byte] & 1 << bit) != 0 else 0
+        else:
+            for name, (chan, b1, b2, flip) in self.mappings.items():
+                if channel == chan:
+                    val = flip * to_int16(data[b1], data[b2]) / float(self.axis_scale)
+                    self.dict_state[name] = val
+
+        # must receive both channels of the 6DOF state before we update state
+        if channel != CHANNEL.XYZ:
             self.tuple_state = MouseState(**self.dict_state)  # type: ignore
 
         # call any attached callbacks
-        if self.callback:
-            self.callback(self.tuple_state)
-
-        # only call the button callback if the button state actually changed
-        if self.button_callback and button_changed:
-            self.button_callback(self.tuple_state)
+        if channel == CHANNEL.BTN:
+            if self.button_callback:
+                self.button_callback(self.tuple_state)
+        elif channel == CHANNEL.PRY:
+            if self.callback:
+                self.callback(self.tuple_state)
 
     @property
     def is_running(self) -> bool:
@@ -340,6 +342,12 @@ class DeviceSpec:
             self._thread.stop()
             self._thread.join()
             self._thread = None
+
+
+class CHANNEL:
+    XYZ = 1
+    PRY = 2
+    BTN = 3
 
 
 # the IDs for the supported devices
@@ -358,8 +366,8 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=2, byte1=5, byte2=6, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="LEFT"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="RIGHT"),
+            ButtonSpec(byte=1, bit=0, hint="LEFT"),
+            ButtonSpec(byte=1, bit=1, hint="RIGHT"),
         ],
         axis_scale=350.0,
     ),
@@ -376,8 +384,8 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=2, byte1=5, byte2=6, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="LEFT"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="RIGHT"),
+            ButtonSpec(byte=1, bit=0, hint="LEFT"),
+            ButtonSpec(byte=1, bit=1, hint="RIGHT"),
         ],
         axis_scale=350.0,
     ),
@@ -394,21 +402,21 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=1, byte1=11, byte2=12, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="MENU"),
-            ButtonSpec(channel=3, byte=3, bit=7, hint="ALT"),
-            ButtonSpec(channel=3, byte=4, bit=1, hint="CTRL"),
-            ButtonSpec(channel=3, byte=4, bit=0, hint="SHIFT"),
-            ButtonSpec(channel=3, byte=3, bit=6, hint="ESC"),
-            ButtonSpec(channel=3, byte=2, bit=4, hint="1"),
-            ButtonSpec(channel=3, byte=2, bit=5, hint="2"),
-            ButtonSpec(channel=3, byte=2, bit=6, hint="3"),
-            ButtonSpec(channel=3, byte=2, bit=7, hint="4"),
-            ButtonSpec(channel=3, byte=2, bit=0, hint="ROLL CLOCKWISE"),
-            ButtonSpec(channel=3, byte=1, bit=2, hint="TOP"),
-            ButtonSpec(channel=3, byte=4, bit=2, hint="ROTATION"),
-            ButtonSpec(channel=3, byte=1, bit=5, hint="FRONT"),
-            ButtonSpec(channel=3, byte=1, bit=4, hint="REAR"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="FIT"),
+            ButtonSpec(byte=1, bit=0, hint="MENU"),
+            ButtonSpec(byte=3, bit=7, hint="ALT"),
+            ButtonSpec(byte=4, bit=1, hint="CTRL"),
+            ButtonSpec(byte=4, bit=0, hint="SHIFT"),
+            ButtonSpec(byte=3, bit=6, hint="ESC"),
+            ButtonSpec(byte=2, bit=4, hint="1"),
+            ButtonSpec(byte=2, bit=5, hint="2"),
+            ButtonSpec(byte=2, bit=6, hint="3"),
+            ButtonSpec(byte=2, bit=7, hint="4"),
+            ButtonSpec(byte=2, bit=0, hint="ROLL CLOCKWISE"),
+            ButtonSpec(byte=1, bit=2, hint="TOP"),
+            ButtonSpec(byte=4, bit=2, hint="ROTATION"),
+            ButtonSpec(byte=1, bit=5, hint="FRONT"),
+            ButtonSpec(byte=1, bit=4, hint="REAR"),
+            ButtonSpec(byte=1, bit=1, hint="FIT"),
         ],
         axis_scale=350.0,
     ),
@@ -425,21 +433,21 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=2, byte1=5, byte2=6, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="MENU"),
-            ButtonSpec(channel=3, byte=3, bit=7, hint="ALT"),
-            ButtonSpec(channel=3, byte=4, bit=1, hint="CTRL"),
-            ButtonSpec(channel=3, byte=4, bit=0, hint="SHIFT"),
-            ButtonSpec(channel=3, byte=3, bit=6, hint="ESC"),
-            ButtonSpec(channel=3, byte=2, bit=4, hint="1"),
-            ButtonSpec(channel=3, byte=2, bit=5, hint="2"),
-            ButtonSpec(channel=3, byte=2, bit=6, hint="3"),
-            ButtonSpec(channel=3, byte=2, bit=7, hint="4"),
-            ButtonSpec(channel=3, byte=2, bit=0, hint="ROLL CLOCKWISE"),
-            ButtonSpec(channel=3, byte=1, bit=2, hint="TOP"),
-            ButtonSpec(channel=3, byte=4, bit=2, hint="ROTATION"),
-            ButtonSpec(channel=3, byte=1, bit=5, hint="FRONT"),
-            ButtonSpec(channel=3, byte=1, bit=4, hint="REAR"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="FIT"),
+            ButtonSpec(byte=1, bit=0, hint="MENU"),
+            ButtonSpec(byte=3, bit=7, hint="ALT"),
+            ButtonSpec(byte=4, bit=1, hint="CTRL"),
+            ButtonSpec(byte=4, bit=0, hint="SHIFT"),
+            ButtonSpec(byte=3, bit=6, hint="ESC"),
+            ButtonSpec(byte=2, bit=4, hint="1"),
+            ButtonSpec(byte=2, bit=5, hint="2"),
+            ButtonSpec(byte=2, bit=6, hint="3"),
+            ButtonSpec(byte=2, bit=7, hint="4"),
+            ButtonSpec(byte=2, bit=0, hint="ROLL CLOCKWISE"),
+            ButtonSpec(byte=1, bit=2, hint="TOP"),
+            ButtonSpec(byte=4, bit=2, hint="ROTATION"),
+            ButtonSpec(byte=1, bit=5, hint="FRONT"),
+            ButtonSpec(byte=1, bit=4, hint="REAR"),
+            ButtonSpec(byte=1, bit=1, hint="FIT"),
         ],
         axis_scale=350.0,
     ),
@@ -456,8 +464,8 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=1, byte1=11, byte2=12, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="LEFT"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="RIGHT"),
+            ButtonSpec(byte=1, bit=0, hint="LEFT"),
+            ButtonSpec(byte=1, bit=1, hint="RIGHT"),
         ],
         axis_scale=350.0,
     ),
@@ -474,21 +482,21 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=1, byte1=11, byte2=12, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=1, bit=0, hint="MENU"),
-            ButtonSpec(channel=3, byte=3, bit=7, hint="ALT"),
-            ButtonSpec(channel=3, byte=4, bit=1, hint="CTRL"),
-            ButtonSpec(channel=3, byte=4, bit=0, hint="SHIFT"),
-            ButtonSpec(channel=3, byte=3, bit=6, hint="ESC"),
-            ButtonSpec(channel=3, byte=2, bit=4, hint="1"),
-            ButtonSpec(channel=3, byte=2, bit=5, hint="2"),
-            ButtonSpec(channel=3, byte=2, bit=6, hint="3"),
-            ButtonSpec(channel=3, byte=2, bit=7, hint="4"),
-            ButtonSpec(channel=3, byte=2, bit=0, hint="ROLL CLOCKWISE"),
-            ButtonSpec(channel=3, byte=1, bit=2, hint="TOP"),
-            ButtonSpec(channel=3, byte=4, bit=2, hint="ROTATION"),
-            ButtonSpec(channel=3, byte=1, bit=5, hint="FRONT"),
-            ButtonSpec(channel=3, byte=1, bit=4, hint="REAR"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="FIT"),
+            ButtonSpec(byte=1, bit=0, hint="MENU"),
+            ButtonSpec(byte=3, bit=7, hint="ALT"),
+            ButtonSpec(byte=4, bit=1, hint="CTRL"),
+            ButtonSpec(byte=4, bit=0, hint="SHIFT"),
+            ButtonSpec(byte=3, bit=6, hint="ESC"),
+            ButtonSpec(byte=2, bit=4, hint="1"),
+            ButtonSpec(byte=2, bit=5, hint="2"),
+            ButtonSpec(byte=2, bit=6, hint="3"),
+            ButtonSpec(byte=2, bit=7, hint="4"),
+            ButtonSpec(byte=2, bit=0, hint="ROLL CLOCKWISE"),
+            ButtonSpec(byte=1, bit=2, hint="TOP"),
+            ButtonSpec(byte=4, bit=2, hint="ROTATION"),
+            ButtonSpec(byte=1, bit=5, hint="FRONT"),
+            ButtonSpec(byte=1, bit=4, hint="REAR"),
+            ButtonSpec(byte=1, bit=1, hint="FIT"),
         ],
         axis_scale=350.0,
     ),
@@ -505,27 +513,27 @@ DEVICE_SPECS = {
             "yaw": AxisSpec(channel=2, byte1=5, byte2=6, scale=1),
         },
         button_mapping=[
-            ButtonSpec(channel=3, byte=4, bit=0, hint="SHIFT"),
-            ButtonSpec(channel=3, byte=3, bit=6, hint="ESC"),
-            ButtonSpec(channel=3, byte=4, bit=1, hint="CTRL"),
-            ButtonSpec(channel=3, byte=3, bit=7, hint="ALT"),
-            ButtonSpec(channel=3, byte=3, bit=1, hint="1"),
-            ButtonSpec(channel=3, byte=3, bit=2, hint="2"),
-            ButtonSpec(channel=3, byte=2, bit=6, hint="3"),
-            ButtonSpec(channel=3, byte=2, bit=7, hint="4"),
-            ButtonSpec(channel=3, byte=3, bit=0, hint="5"),
-            ButtonSpec(channel=3, byte=1, bit=0, hint="MENU"),
-            ButtonSpec(channel=3, byte=4, bit=6, hint="-"),
-            ButtonSpec(channel=3, byte=4, bit=5, hint="+"),
-            ButtonSpec(channel=3, byte=4, bit=4, hint="DOMINANT"),
-            ButtonSpec(channel=3, byte=4, bit=3, hint="PAN/ZOOM"),
-            ButtonSpec(channel=3, byte=4, bit=2, hint="ROTATION"),
-            ButtonSpec(channel=3, byte=2, bit=0, hint="ROLL CLOCKWISE"),
-            ButtonSpec(channel=3, byte=1, bit=2, hint="TOP"),
-            ButtonSpec(channel=3, byte=1, bit=5, hint="FRONT"),
-            ButtonSpec(channel=3, byte=1, bit=4, hint="REAR"),
-            ButtonSpec(channel=3, byte=2, bit=2, hint="ISO"),
-            ButtonSpec(channel=3, byte=1, bit=1, hint="FIT"),
+            ButtonSpec(byte=4, bit=0, hint="SHIFT"),
+            ButtonSpec(byte=3, bit=6, hint="ESC"),
+            ButtonSpec(byte=4, bit=1, hint="CTRL"),
+            ButtonSpec(byte=3, bit=7, hint="ALT"),
+            ButtonSpec(byte=3, bit=1, hint="1"),
+            ButtonSpec(byte=3, bit=2, hint="2"),
+            ButtonSpec(byte=2, bit=6, hint="3"),
+            ButtonSpec(byte=2, bit=7, hint="4"),
+            ButtonSpec(byte=3, bit=0, hint="5"),
+            ButtonSpec(byte=1, bit=0, hint="MENU"),
+            ButtonSpec(byte=4, bit=6, hint="-"),
+            ButtonSpec(byte=4, bit=5, hint="+"),
+            ButtonSpec(byte=4, bit=4, hint="DOMINANT"),
+            ButtonSpec(byte=4, bit=3, hint="PAN/ZOOM"),
+            ButtonSpec(byte=4, bit=2, hint="ROTATION"),
+            ButtonSpec(byte=2, bit=0, hint="ROLL CLOCKWISE"),
+            ButtonSpec(byte=1, bit=2, hint="TOP"),
+            ButtonSpec(byte=1, bit=5, hint="FRONT"),
+            ButtonSpec(byte=1, bit=4, hint="REAR"),
+            ButtonSpec(byte=2, bit=2, hint="ISO"),
+            ButtonSpec(byte=1, bit=1, hint="FIT"),
         ],
         axis_scale=350.0,
     ),

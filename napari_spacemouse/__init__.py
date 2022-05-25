@@ -18,7 +18,7 @@ def uninstall():
 
 def install(device: str = None):
     """patch napari to be spacemouse aware."""
-    from napari_spacemouse._napari import _apply_state_to_viewer
+    from napari_spacemouse import _napari
 
     if _spacemouse._active_device is not None:
         if device and _spacemouse._active_device.name != device:
@@ -26,7 +26,11 @@ def install(device: str = None):
         _spacemouse.run()
         return
 
-    if dev := _spacemouse.open(callback=_apply_state_to_viewer, device=device):
+    if dev := _spacemouse.open(
+        callback=_napari._apply_state_to_viewer,
+        button_callback=_napari._handle_buttons,
+        device=device,
+    ):
         dev.run()
 
 
@@ -37,19 +41,12 @@ if __name__ == "__main__":
 
     install()
 
-    data = tuple(np.load(Path(__file__).parent / "wrench.npz").values())
-
     viewer = napari.Viewer(ndisplay=3)
-    viewer.add_surface(data)
+    viewer.axes.visible = True
 
+    viewer.open_sample("napari", "brain")
+    # data = tuple(np.load(Path(__file__).parent / "wrench.npz").values())
+    # viewer.add_surface(data)
+
+    viewer.camera.angles = (0, 0, 0)
     napari.run()
-
-# troubleshoot
-# start with (0,0,0) -> (Y+clockwise, Z+clockwise, X+clockwise)
-# rotate each axis, evaluate what it moves in the image.
-
-# right-handed rotation, rotating counter-clockwise when looking at zero from positive
-
-# tilt away from me -> pitch goes up
-# rotate (doorknob) clockwise -> yaw goes up
-# tilt right -> roll goes up

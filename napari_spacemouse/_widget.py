@@ -14,9 +14,9 @@ class SpaceMouse(QtW.QWidget):
         self._on_btn = QtW.QPushButton()
         self._on_btn.setCheckable(True)
         self._on_btn.toggled.connect(self._on_btn_changed)
-        running = bool(sm._active_device and sm._active_device.is_running)
-        self._on_btn.setChecked(running)
-        self._on_btn_changed(running)
+        # running = bool(sm._active_device and sm._active_device.is_running)
+        self._on_btn.setChecked(True)
+        self._on_btn_changed(True)
 
         self.setLayout(QtW.QVBoxLayout())
         self.layout().addWidget(self._dev_combo)
